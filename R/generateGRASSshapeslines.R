@@ -1,66 +1,74 @@
-library(data.table)
-library(sf)
-library(raster)
-library(dplyr)
-library(exactextractr)
-library(rgdal)
-library(leaflet)
-library(htmltools)
-#library(GISTools)
-library(rgrass)
-library(sp)
-library(rgdal)
-#library(rgeos)
-library(maptools)
 
+library(sf)
+library(exactextractr)
+library(rgrass)
+library(terra)
+library(fs)
+
+#crete data directories if they do not exist
+#data directories are .gitignored and so won't
+#be available if this project has just been cloned from a git remote
+#(currently Azure devOps)
+dir_create("data/spatial/elevation_models")
+dir_create("data/spatial/vic_sa2")
+dir_create("data/spatial/streams")
+dir_create("data/spatial/flows")
+dir_create("data/spatial/area")
 
 #SHAPE catchments____________________________
 ###make catchment shapefile and flow direction layer from dynamic elevation model
-#setwd("C:/Documents/catchment")
 
-raster("dem.tif") -> rr
+terra::rast("data/spatial/elevation_models/dem.tif") -> rr
 rr <- setMinMax(rr)
 
 #rr[rr <= 0] <- NA
-wgs <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
-utm <- "+proj=utm +zone=48 +south=T ellps=WGS84"
-name <- names(rr)
-lgashape <- readOGR("C:/privateRlab/catchment/Vic_State_SA2.shp")
-vicshape <- aggregate(lgashape, by = "STE_NAME17", do_union = TRUE, simplify = TRUE, join = st_intersects)
-st_crs(lgashape)
+
+lgashape <- terra::vect("data/spatial/vic_sa2/Vic_State_SA2.shp")
+
+vicshape <- terra::aggregate(lgashape, by = "STE_NAME17") |>
+  sf::st_as_sf() |>
+  st_transform(crs(rr))
+
+
 
 elevation_vic <- exactextractr::exact_extract(rr, vicshape, fun = NULL, include_cell = TRUE,include_xy = TRUE,force_df = TRUE, stack_apply = FALSE)
 
-elevation_dat <- as.data.frame(elevation_vic)
-# max(elevation_dat$value, na.rm=T)
+elevation_dat <- as.data.frame(elevation_vic)[, c("x", "y", "value")]
 
-G <- initGRASS(gisBase="C:/Program Files/GRASS GIS 8.0",  gisDbase="grassdata",location="drainage",mapset="PERMANENT", override=TRUE)
-#home = "C:/privateRlab/catchment/GRASS GIS 8.0/bin",
-rel <- rasterFromXYZ(as.data.frame(elevation_dat)[, c("x", "y", "value")])
-re <- aggregate(rel, fact = aggregate_raster_factor, fun = "mean")
-crs(re) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
-crs(re) <- "+init=epsg:4326"
-plot(re)
-st_crs(re)
-crs(rel) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0"
-crs(rel) <- "+init=epsg:4326"
+
+G <- initGRASS(gisBase="C:/Program Files/GRASS GIS 8.0",
+               mapset = "PERMANENT",
+               override=TRUE)
+
+rel <- terra::rast(elevation_dat, crs = crs(rr))
+
+aggregate_raster_factor <- 2
+re <- terra::aggregate(rel, fact = aggregate_raster_factor, fun = "mean")
+
+re <- project(re, "epsg:4326")
+
 
 #,
-#set the region and covert raster to be spatial grid data frame
-rast <- as(re, "SpatialGridDataFrame")
-proj4string(rast)<- CRS("+init=epsg:4326")
-write_RAST(rast, "rast_img", flags = c("overwrite"))
-execGRASS("r.info", map = "rast_img")
+#set the projection to epsg:4326
+# gRASS need to be initialised with mapset = "PERMANENT"
+# in order to change the projection
+# see https://gis.stackexchange.com/a/230550
+#
 execGRASS("g.proj", flags = "c", epsg = 4326)
+
+#cehck mapset and region settings
+execGRASS("g.mapset", flags = "p")
+execGRASS("g.region", flags = "p")
+
+write_RAST(re, "rast_img", flags = c("overwrite"))
+execGRASS("r.info", map = "rast_img")
+
 
 
 #set the region based on the mapset
 
 execGRASS("g.region", raster = "rast_img")
 
-
-str(rast)
-image(rast, "value", col = terrain.colors(20))
 
 # out_raster <- read_RAST("rast_img")
 # #str(out_raster) #optional
@@ -99,7 +107,7 @@ execGRASS("r.to.vect", flags='overwrite',
                             output="streams", type="line"))
 execGRASS('v.out.ogr',flags=c('overwrite'),
           parameters=list(input='streams',
-                          output="streams_temp.shp",type="line",
+                          output="data/spatial/streams/streams_temp.shp",type="line",
                           format="ESRI_Shapefile"))
 
 ##all catchments
@@ -108,7 +116,7 @@ execGRASS('r.to.vect', flags='overwrite',
                             output='catchments', type="area"))
 execGRASS('v.out.ogr', flags=c('overwrite'),
           parameters=list(input='catchments',
-                          output="area.shp",type="area",
+                          output="data/spatial/area/area.shp",type="area",
                           format="ESRI_Shapefile"))
 
 ##flow volume raster
@@ -117,8 +125,8 @@ execGRASS("r.to.vect", flags='overwrite',
                             output="flows", type="area"))
 execGRASS('v.out.ogr',flags=c('overwrite'),
           parameters=list(input='flows',
-                          output="flows.shp",type="area",
+                          output="data/spatial/flows/flows.shp",type="area",
                           format="ESRI_Shapefile"))
 
-shapefile("streams_temp.shp") -> s_vic
-plot(s_vic)
+s_vic <- st_read("data/spatial/streams/streams_temp.shp")
+plot(st_geometry(s_vic))
