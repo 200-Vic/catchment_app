@@ -43,3 +43,10 @@ docs/
 
 # translation temp files
 po/*~
+
+# GRASS generated files
+grassdata/
+junk
+
+# Data files
+data/
