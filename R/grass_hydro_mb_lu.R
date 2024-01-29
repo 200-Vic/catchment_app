@@ -4,22 +4,24 @@
 # Add MB classification legend
 
 
-library(data.table)
-library(sf)
-library(raster)
+#library(data.table)
+#library(sf)
+#library(raster)
 library(dplyr)
 library(exactextractr)
-library(rgdal)
+#library(rgdal)
 library(leaflet)
 library(htmltools)
 
 library(rgrass)
-library(sp)
+library(terra)
+library(sf)
+#library(sp)
 #library(rgdal)retired
 #library(rgeos)retired
 #library(maptools)retired
 
-setwd("C:/privateRlab/catchment")
+#setwd("C:/privateRlab/catchment")
 #setwd("C:/Users/CastonT/Environment Protection Authority Victoria/Environmental Public Health Branch (internal) SharePoint - Documents/EHTN/R_lab/catchment")
 
 generateGRASSshapeslines = FALSE
@@ -52,37 +54,37 @@ crs(re) <- "+init=epsg:4326"
 
 #MESHBLOCKS__________________
 
-sf_mb16 <- readOGR("MB_2016_VIC.shp") #saved in environment to sav time
+sf_mb16 <- terra::vect("data/spatial/mb_2016_vic/MB_2016_VIC.shp") #saved in environment to sav time
 #st_crs(sf_mb16)
 ###get centroids of meshblocks
 #class(sf_mb16)
-cents <- coordinates(sf_mb16)
+cents <- centroids(sf_mb16)
 
 cents <- SpatialPointsDataFrame(coords=cents, data=sf_mb16@data,
                                 proj4string=CRS("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
 #proj4string(cents)<- CRS("")
 
-st_mb16 <- st_read("MB_2016_VIC.shp") #saved in environment to sav time
-st_mb16 <- as.data.table(st_mb16)
+st_mb16 <- st_read("data/spatial/mb_2016_vic/MB_2016_VIC.shp") #saved in environment to sav time
+#st_mb16 <- as.data.table(st_mb16)
 
 #MESHBLOCK POPULATION and LANDUSE________________
 
-abs_mb_pops <- read.csv("2016 census mesh block counts_no_footer.csv")
-setnames(abs_mb_pops, "MB_CODE_2016", "MB_CODE16")
-abs_mb_pops <- as.data.table(abs_mb_pops)
-abs_mb_pops$MB_CODE16 <- as.character(abs_mb_pops$MB_CODE16)
+abs_mb_pops <- read.csv("data/2016_census_mesh_block_counts_no_footer.csv",
+                        colClasses = c("MB_CODE_2016" = "character"))
+names(abs_mb_pops)[1] <- "MB_CODE16"
+
 
 #SAMPLE_SITES_
 
 ##select catchment by grid point from sample sites table
 
-points <- read.csv("pathogen sample sites.csv")
-points <- as.data.table(points)
+points <- read.csv("data/pathogen_sample_sites.csv")
+#points <- as.data.table(points)
 #setnames(points$X, points$site_n)
 
-points$site_n  <- as.numeric(seq.int(nrow(points)))
-points <- points[37:43]
-points <- points[,.(longitude, latitude, site_n)]
+points$site_n  <- as.numeric(seq.int(along.with = points$X))
+#points <- points[37:43, ]
+points <- points[, c("longitude", "latitude", "site_n")]
 
 ##snap points to lines
 
@@ -90,13 +92,13 @@ outlet_coords  <- as.data.frame(coordinates(points))
 outlet_coords <- SpatialPoints(coords=outlet_coords,
                                proj4string=CRS("+proj=longlat +datum=WGS84 +no_defs"))
 #proj4string(outlet_coords)<- CRS("")("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
-
+outlet_coords <- st_as_sf(points, coords = c("longitude", "latitude"), crs = "4326")
 #c <- st_as_sf(outlet_coords)
 
 
 #####Bring in streams spatial lines dataframe from the GRASS commands
-shapefile("streams_temp.shp") -> s_vic
-plot(s_vic)
+s_vic <- st_read("data/spatial/streams/streams_temp.shp")
+plot(st_geometry(s_vic))
  #d <- st_as_sf(s_vic)
 # shapefile("streams.shp") -> s_vic
 # plot(s_vic)
@@ -109,8 +111,8 @@ outlets <- as.data.frame(outlet_coords)
 #outlets$site_n  <- as.numeric(seq.int(nrow(outlets)))
 #outlets <- cbind(outlets, points)
 #by = c("site_n")
-plot(s_vic)
-plot(outlet_coords, add=T, col="blue")
+plot(st_geometry(s_vic))
+plot(st_geometry(outlet_coords), add=T, col="blue")
 #plot(snap_points, add=T)
 
 ###CADASTRAL LANDUSE_DATA
@@ -286,7 +288,7 @@ st_mb16v2@data <- attr
 map <- leaflet()
 map <- addTiles(map, urlTemplate = "//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", layerId = NULL, group = NULL, data = getMapData(map)) %>%
   fitBounds(144.5, -38.5, 146, -37)
-
+map
 #s <- readOGR("streams.shp")
 s <- s_vic
 
