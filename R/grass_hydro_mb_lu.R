@@ -24,7 +24,7 @@ library(sf)
 #setwd("C:/privateRlab/catchment")
 #setwd("C:/Users/CastonT/Environment Protection Authority Victoria/Environmental Public Health Branch (internal) SharePoint - Documents/EHTN/R_lab/catchment")
 
-generateGRASSshapeslines = FALSE
+generateGRASSshapeslines = TRUE
 aggregate_raster_factor = 1 #needs to be adjusted to enlarge cells and avoid flow direction of < 1. 5.2 too small
 #log_accumulation = x #this approach doesn't work for the execGRASS command
 #line 86 stream_thresh <- log_accum>5.2  #this is an accumulation threshold based on the number of upstream raster cells
@@ -37,7 +37,7 @@ aggregate_raster_factor = 1 #needs to be adjusted to enlarge cells and avoid flo
 ##But Frankston samples 13-15 are on little creeks factor 2, log_accum>2
 ##But site 14; factor 3, log_accum>1. Had to use the most stream.shp to get enough creek but with factor 3 for the basin calc
 
-if(generateGRASSshapeslines){source("generateGRASSshapeslines.R")
+if(generateGRASSshapeslines){source("R/generateGRASSshapeslines.R")
 } else {G <- initGRASS(gisBase="C:/Program Files/GRASS GIS 8.0", gisDbase="grassdata",location="drainage",mapset="PERMANENT", override=TRUE)
 raster("dem.tif") -> rr
 lgashape <- readOGR("C:/privateRlab/catchment/Vic_State_SA2.shp")
@@ -88,24 +88,25 @@ points <- points[, c("longitude", "latitude", "site_n")]
 
 ##snap points to lines
 
-outlet_coords  <- as.data.frame(coordinates(points))
-outlet_coords <- SpatialPoints(coords=outlet_coords,
-                               proj4string=CRS("+proj=longlat +datum=WGS84 +no_defs"))
+#outlet_coords  <- as.data.frame(coordinates(points))
+#outlet_coords <- SpatialPoints(coords=outlet_coords,
+                              # proj4string=CRS("+proj=longlat +datum=WGS84 +no_defs"))
 #proj4string(outlet_coords)<- CRS("")("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
-outlet_coords <- st_as_sf(points, coords = c("longitude", "latitude"), crs = "4326")
+outlet_coords <- st_as_sf(points, coords = c("longitude", "latitude"), crs = st_crs(4326))
 #c <- st_as_sf(outlet_coords)
-
+if(interactive()) mapview::mapview(outlet_coords)
 
 #####Bring in streams spatial lines dataframe from the GRASS commands
 s_vic <- st_read("data/spatial/streams/streams_temp.shp")
-plot(st_geometry(s_vic))
+if(interactive()) mapview::mapview(s_vic)
  #d <- st_as_sf(s_vic)
 # shapefile("streams.shp") -> s_vic
 # plot(s_vic)
 #snap_points <- snapPointsToLines(outlet_coords, s_vic, maxDist=NA, withAttrs = FALSE, idField=NA)
 #snap_points <- st_snap(c, d)
 
-outlets <- as.data.frame(outlet_coords)
+#outlets <- as.data.frame(outlet_coords)
+outlets <- outler
 # setnames(outlets, "X", "Longitude")
 # setnames(outlets, "Y", "Latitude")
 #outlets$site_n  <- as.numeric(seq.int(nrow(outlets)))
@@ -119,18 +120,22 @@ plot(st_geometry(outlet_coords), add=T, col="blue")
 ###make cadastral centroid coordinates list.
 relist <- TRUE
 if(relist){
-  sf_lu <- readOGR("LANDUSE_2017.shp")
-  st_crs(sf_lu)
+  sf_lu <- st_read("data/spatial/landuse/LANDUSE_2017.shp")
+  sf_lu$X <-  as.numeric(seq.int(nrow(sf_lu)))
+
+ # st_crs(sf_lu)
   ###get centroids of cadastral polygons
-  class(sf_lu)
-  cents_lu <- coordinates(sf_lu)
-  cents_lu <- as.data.table(cents_lu)
-  cents_lu$X  <- as.numeric(seq.int(nrow(cents_lu)))
-  cents_lu <- SpatialPointsDataFrame(coords=cents_lu, data=sf_lu@data,
-                                     proj4string=CRS("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
-st_lu <- st_read("LANDUSE_2017.shp") #saved in environment to save time
-st_lu1 <- as.data.table(st_lu)
-st_lu1$X  <- as.numeric(seq.int(nrow(st_lu1)))
+  #class(sf_lu)
+  cents_lu <- st_centroid(sf_lu)
+  cents_lu$X <-    sf_lu$X
+
+ # cents_lu <- as.data.table(cents_lu)
+#  cents_lu$X  <- as.numeric(seq.int(nrow(cents_lu)))
+#  cents_lu <- SpatialPointsDataFrame(coords=cents_lu, data=sf_lu@data,
+#                                     proj4string=CRS("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
+#st_lu <- st_read("LANDUSE_2017.shp") #saved in environment to save time
+#st_lu1 <- as.data.table(st_lu)
+#st_lu1$X  <- as.numeric(seq.int(nrow(st_lu1)))
 
   }
 
@@ -149,18 +154,18 @@ st_lu1$X  <- as.numeric(seq.int(nrow(st_lu1)))
 site_todo <- unique(outlets$site_n)
 
 for(i in 1:length(site_todo)){
-i = 41
+ i = 30
   i <- site_todo[i]
 
  ###&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
   outlet_coord <- outlets[outlets$site_n == i, ]
-  outlet_coord <- outlet_coord[ , c("longitude", "latitude") ]
-  outlet_coord <- coordinates(outlet_coord)
-
+  #outlet_coord <- outlet_coord[ , c("longitude", "latitude") ]
+  #outlet_coord <- coordinates(outlet_coord)
+ coords <- st_coordinates(outlet_coord$geometry) |> as.vector()
 
   execGRASS("r.water.outlet", flags = 'overwrite',
             parameters = list(input = 'fdir_temp', output="basin_A31",   # flow direction as input
-                              coordinates = outlet_coord))
+                              coordinates = coords))
 
   execGRASS('r.to.vect', flags='overwrite',
             parameters = list(input='basin_A31',
@@ -175,18 +180,17 @@ i = 41
   #read the results and plot:
 
   #shapefile("basin.shp") -> b
-  readOGR("basin.shp") -> b
+  st_read("basin.shp") -> b
   #shapefile("area.shp") -> a
   #shapefile("flows.shp") -> f
-plot(b)
+  plot(b$geometry)
 
 
   ##make elevation raster
   elevation_b <- exactextractr::exact_extract(rel, b, fun = NULL, include_cell = TRUE,include_xy = TRUE,force_df = TRUE, stack_apply = FALSE)
-  elevation_b <- as.data.frame(elevation_b)
-  r <- rasterFromXYZ(as.data.frame(elevation_b)[, c("x", "y", "value")])
-  crs(r) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 +init=epsg:4326"
-  #crs(r) <- ""
+  elevation_b <- as.data.frame(elevation_b)[, c("x", "y", "value")]
+  r <- terra::rast(elevation_b, crs = st_crs(b))
+
 
   plot(r)
   plot(b, add=T)

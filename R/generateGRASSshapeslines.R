@@ -35,17 +35,19 @@ elevation_vic <- exactextractr::exact_extract(rr, vicshape, fun = NULL, include_
 
 elevation_dat <- as.data.frame(elevation_vic)[, c("x", "y", "value")]
 
+rel <- terra::rast(elevation_dat, crs = crs(rr))
+
+aggregate_raster_factor <- 1
+re <- terra::aggregate(rel, fact = aggregate_raster_factor, fun = "mean")
+
+re <- project(re, "epsg:4326")
+
+
 
 G <- initGRASS(gisBase="C:/Program Files/GRASS GIS 8.0",
                mapset = "PERMANENT",
                override=TRUE)
 
-rel <- terra::rast(elevation_dat, crs = crs(rr))
-
-aggregate_raster_factor <- 2
-re <- terra::aggregate(rel, fact = aggregate_raster_factor, fun = "mean")
-
-re <- project(re, "epsg:4326")
 
 
 #,
