@@ -14,6 +14,7 @@ dir_create("data/spatial/vic_sa2")
 dir_create("data/spatial/streams")
 dir_create("data/spatial/flows")
 dir_create("data/spatial/area")
+dir_create("data/spatial/basin")
 
 #SHAPE catchments____________________________
 ###make catchment shapefile and flow direction layer from dynamic elevation model
@@ -23,9 +24,9 @@ rr <- setMinMax(rr)
 
 #rr[rr <= 0] <- NA
 
-lgashape <- terra::vect("data/spatial/vic_sa2/Vic_State_SA2.shp")
+sa2shape <- terra::vect("data/spatial/vic_sa2/Vic_State_SA2.shp")
 
-vicshape <- terra::aggregate(lgashape, by = "STE_NAME17") |>
+vicshape <- terra::aggregate(sa2shape, by = "STE_NAME17") |>
   sf::st_as_sf() |>
   st_transform(crs(rr))
 
@@ -37,7 +38,7 @@ elevation_dat <- as.data.frame(elevation_vic)[, c("x", "y", "value")]
 
 rel <- terra::rast(elevation_dat, crs = crs(rr))
 
-aggregate_raster_factor <- 1
+#aggregate_raster_factor <- 1
 re <- terra::aggregate(rel, fact = aggregate_raster_factor, fun = "mean")
 
 re <- project(re, "epsg:4326")
@@ -94,7 +95,7 @@ execGRASS("r.watershed", flags=c("overwrite", "a"),
 
 #run mapcalc (map calculator) to post process the flow accumulation into a stream
 execGRASS("r.mapcalc",flags="overwrite", expression="log_accum=log(abs(accum)+1)")
-execGRASS("r.mapcalc",flags="overwrite", expression="inf_rivers=if(log_accum>6.5)")
+execGRASS("r.mapcalc",flags="overwrite", expression="inf_rivers=if(log_accum>5)")
 
 #Thin the raster to convert it as vector
 execGRASS("r.null", map="inf_rivers", setnull = "0")
