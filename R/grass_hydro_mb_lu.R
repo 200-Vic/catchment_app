@@ -4,24 +4,22 @@
 # Add MB classification legend
 
 
-#library(data.table)
+library(data.table)
 #library(sf)
-#library(raster)
+library(raster)
 library(dplyr)
 library(exactextractr)
 #library(rgdal)
 library(leaflet)
 library(htmltools)
-
+library(spNetwork)
 library(rgrass)
-library(terra)
-library(sf)
-#library(sp)
+library(sp)
 #library(rgdal)retired
 #library(rgeos)retired
 #library(maptools)retired
 
-#setwd("C:/privateRlab/catchment")
+setwd("C:/privateRlab/app_catchment")
 #setwd("C:/Users/CastonT/Environment Protection Authority Victoria/Environmental Public Health Branch (internal) SharePoint - Documents/EHTN/R_lab/catchment")
 
 generateGRASSshapeslines = TRUE
@@ -39,9 +37,10 @@ aggregate_raster_factor = 1 #needs to be adjusted to enlarge cells and avoid flo
 
 if(generateGRASSshapeslines){source("R/generateGRASSshapeslines.R")
 } else {G <- initGRASS(gisBase="C:/Program Files/GRASS GIS 8.0", gisDbase="grassdata",location="drainage",mapset="PERMANENT", override=TRUE)
-raster("dem.tif") -> rr
-lgashape <- readOGR("C:/privateRlab/catchment/Vic_State_SA2.shp")
-vicshape <- aggregate(lgashape, by = "STE_NAME17", do_union = TRUE, simplify = TRUE, join = st_intersects)
+terra::rast("data/spatial/elevation_models/dem.tif") -> rr
+sa2shape <- st_read("data/spatial/vic_sa2/Vic_State_SA2.shp")
+vicshape <- st_union(sa2shape)
+#vicshape <- aggregate(lgashape, by = "STE_NAME17", do_union = TRUE, simplify = TRUE, join = st_intersects)
 elevation_vic <- exactextractr::exact_extract(rr, vicshape, fun = NULL, include_cell = TRUE,include_xy = TRUE,force_df = TRUE, stack_apply = FALSE)
 elevation_dat <- as.data.frame(elevation_vic)
 rel <- rasterFromXYZ(as.data.frame(elevation_dat)[, c("x", "y", "value")])
@@ -54,88 +53,93 @@ crs(re) <- "+init=epsg:4326"
 
 #MESHBLOCKS__________________
 
-sf_mb16 <- terra::vect("data/spatial/mb_2016_vic/MB_2016_VIC.shp") #saved in environment to sav time
-#st_crs(sf_mb16)
-###get centroids of meshblocks
-#class(sf_mb16)
-cents <- centroids(sf_mb16)
 
-cents <- SpatialPointsDataFrame(coords=cents, data=sf_mb16@data,
-                                proj4string=CRS("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
-#proj4string(cents)<- CRS("")
+sf_mb16 <- st_read("data/spatial/vic_sa2/MB_2016_VIC.shp")
+cents <- st_centroid(sf_mb16)
+st_crs(cents) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 +init=epsg:4326"
 
-st_mb16 <- st_read("data/spatial/mb_2016_vic/MB_2016_VIC.shp") #saved in environment to sav time
-#st_mb16 <- as.data.table(st_mb16)
+
+#proj4string(cents) <- CRS(re)
+
+
+st_mb16 <- as.data.table(sf_mb16)
 
 #MESHBLOCK POPULATION and LANDUSE________________
 
-abs_mb_pops <- read.csv("data/2016_census_mesh_block_counts_no_footer.csv",
-                        colClasses = c("MB_CODE_2016" = "character"))
-names(abs_mb_pops)[1] <- "MB_CODE16"
-
+abs_mb_pops <- read.csv("data/spatial/vic_sa2/2016 census mesh block counts_no_footer.csv")
+setnames(abs_mb_pops, "MB_CODE_2016", "MB_CODE16")
+abs_mb_pops <- as.data.table(abs_mb_pops)
+abs_mb_pops$MB_CODE16 <- as.character(abs_mb_pops$MB_CODE16)
 
 #SAMPLE_SITES_
 
 ##select catchment by grid point from sample sites table
 
-points <- read.csv("data/pathogen_sample_sites.csv")
-#points <- as.data.table(points)
+points <- read.csv("data/spatial/pathogen sample sites.csv")
+points <- as.data.table(points)
 #setnames(points$X, points$site_n)
 
-points$site_n  <- as.numeric(seq.int(along.with = points$X))
-#points <- points[37:43, ]
-points <- points[, c("longitude", "latitude", "site_n")]
+points$site_n  <- as.numeric(seq.int(nrow(points)))
+points <- points[44]
+points <- points[,.(longitude, latitude, site_n)]
 
 ##snap points to lines
 
-#outlet_coords  <- as.data.frame(coordinates(points))
-#outlet_coords <- SpatialPoints(coords=outlet_coords,
-                              # proj4string=CRS("+proj=longlat +datum=WGS84 +no_defs"))
-#proj4string(outlet_coords)<- CRS("")("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
-outlet_coords <- st_as_sf(points, coords = c("longitude", "latitude"), crs = st_crs(4326))
-#c <- st_as_sf(outlet_coords)
-if(interactive()) mapview::mapview(outlet_coords)
+outlet_coords  <- as.data.frame(coordinates(points))
+outlet_coords <- SpatialPoints(coords=outlet_coords,
+                               proj4string=CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+c <- st_as_sf(outlet_coords)
+
 
 #####Bring in streams spatial lines dataframe from the GRASS commands
-s_vic <- st_read("data/spatial/streams/streams_temp.shp")
-if(interactive()) mapview::mapview(s_vic)
- #d <- st_as_sf(s_vic)
-# shapefile("streams.shp") -> s_vic
-# plot(s_vic)
-#snap_points <- snapPointsToLines(outlet_coords, s_vic, maxDist=NA, withAttrs = FALSE, idField=NA)
-#snap_points <- st_snap(c, d)
+shapefile("data/spatial/streams/streams_temp.shp") -> s_vic
+st_read("data/spatial/streams/streams_temp.shp") -> s_vic_sfc
+plot(s_vic)
 
-#outlets <- as.data.frame(outlet_coords)
-outlets <- outler
+#snap_points <- snapPointsToLines(outlet_coords, s_vic, maxDist=NA, withAttrs = FALSE, idField=NA)
+snap_points <- snapPointsToLines2(c, s_vic_sfc, idField=NA, snap_dist = 100, max_iter = 10)
+snap_points <-  as.data.frame(st_coordinates(snap_points))
+setnames(snap_points, "X", "longitude")
+setnames(snap_points, "Y", "latitude")
+#snap_points$site_n  <- as.numeric(seq.int(nrow(points)))
+snap_coords  <- as.data.frame(coordinates(snap_points))
+snap_coords <- SpatialPoints(coords=snap_coords,
+                               proj4string=CRS("+proj=longlat +datum=WGS84 +no_defs"))
+
+outlets <- as.data.frame(snap_coords)
+outlets$site_n  <- as.numeric(seq.int(nrow(points)))
 # setnames(outlets, "X", "Longitude")
 # setnames(outlets, "Y", "Latitude")
 #outlets$site_n  <- as.numeric(seq.int(nrow(outlets)))
 #outlets <- cbind(outlets, points)
 #by = c("site_n")
-plot(st_geometry(s_vic))
-plot(st_geometry(outlet_coords), add=T, col="blue")
-#plot(snap_points, add=T)
+
+plot(outlet_coords, add=T, col="blue")
+plot(snap_coords, add=T)
 
 ###CADASTRAL LANDUSE_DATA
 ###make cadastral centroid coordinates list.
 relist <- TRUE
 if(relist){
-  sf_lu <- st_read("data/spatial/landuse/LANDUSE_2017.shp")
-  sf_lu$X <-  as.numeric(seq.int(nrow(sf_lu)))
-
- # st_crs(sf_lu)
+  sf_lu <- st_read("data/spatial/vic_sa2/LANDUSE_2017.shp")
+  st_crs(sf_lu)
   ###get centroids of cadastral polygons
-  #class(sf_lu)
+  class(sf_lu)
   cents_lu <- st_centroid(sf_lu)
-  cents_lu$X <-    sf_lu$X
+  #cents_lu <- coordinates(sf_lu)
+  #cents_lu <- as.data.table(cents_lu)
+  cents_lu$X  <- as.numeric(seq.int(nrow(cents_lu)))
+  st_crs(cents_lu) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 +init=epsg:4326"
 
- # cents_lu <- as.data.table(cents_lu)
-#  cents_lu$X  <- as.numeric(seq.int(nrow(cents_lu)))
-#  cents_lu <- SpatialPointsDataFrame(coords=cents_lu, data=sf_lu@data,
-#                                     proj4string=CRS("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
+
+  # cents_lu <- SpatialPointsDataFrame(coords=cents_lu$geometry,
+  #                                    proj4string=CRS("+proj=longlat +ellps=WGS84 +init=epsg:4326"))
+
+
 #st_lu <- st_read("LANDUSE_2017.shp") #saved in environment to save time
-#st_lu1 <- as.data.table(st_lu)
-#st_lu1$X  <- as.numeric(seq.int(nrow(st_lu1)))
+st_lu1 <- as.data.table(sf_lu)
+st_lu1$X  <- as.numeric(seq.int(nrow(st_lu1)))
 
   }
 
@@ -153,26 +157,27 @@ if(relist){
 
 site_todo <- unique(outlets$site_n)
 
+
 for(i in 1:length(site_todo)){
- i = 30
-  i <- site_todo[i]
+#i = 6
+#i <- site_todo[i]
 
  ###&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
   outlet_coord <- outlets[outlets$site_n == i, ]
-  #outlet_coord <- outlet_coord[ , c("longitude", "latitude") ]
-  #outlet_coord <- coordinates(outlet_coord)
- coords <- st_coordinates(outlet_coord$geometry) |> as.vector()
+  outlet_coord <- outlet_coord[ , c("longitude", "latitude") ]
+  outlet_coord <- coordinates(outlet_coord)
+
 
   execGRASS("r.water.outlet", flags = 'overwrite',
             parameters = list(input = 'fdir_temp', output="basin_A31",   # flow direction as input
-                              coordinates = coords))
+                              coordinates = outlet_coord))
 
   execGRASS('r.to.vect', flags='overwrite',
             parameters = list(input='basin_A31',
                               output='catchment', type="area"))
   execGRASS('v.out.ogr', flags=c('overwrite'),
             parameters=list(input='catchment',
-                            output="basin.shp",type="area",
+                            output="data/spatial/basin/basin.shp",type="area",
                             format="ESRI_Shapefile"))
 
   ##&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&
@@ -180,27 +185,34 @@ for(i in 1:length(site_todo)){
   #read the results and plot:
 
   #shapefile("basin.shp") -> b
-  st_read("basin.shp") -> b
+  #readOGR("basin.shp") -> b
+  st_read("data/spatial/basin/basin.shp") -> b
   #shapefile("area.shp") -> a
   #shapefile("flows.shp") -> f
-  plot(b$geometry)
+plot(b)
 
 
   ##make elevation raster
   elevation_b <- exactextractr::exact_extract(rel, b, fun = NULL, include_cell = TRUE,include_xy = TRUE,force_df = TRUE, stack_apply = FALSE)
-  elevation_b <- as.data.frame(elevation_b)[, c("x", "y", "value")]
-  r <- terra::rast(elevation_b, crs = st_crs(b))
-
+  elevation_b <- as.data.frame(elevation_b)
+  r <- rasterFromXYZ(as.data.frame(elevation_b)[, c("x", "y", "value")])
+  crs(r) <- "+proj=longlat +datum=WGS84 +no_defs +ellps=WGS84 +towgs84=0,0,0 +init=epsg:4326"
+  #crs(r) <- ""
 
   plot(r)
-  plot(b, add=T)
+  #plot(b, add=T)
   plot(s_vic, add=T, col="red")
   plot(outlet_coords, add=T, col="blue")
-  #plot(snap_points, add=T)
+  plot(snap_coords, add=T, col="green")
 
 
    ###subset cadastral spatial polygons dataframe to the catchment
-  subcatch_lu <- cents_lu[b,]
+
+
+
+
+subcatch_lu <- cents_lu[b, ]
+
   lu <- unique(subcatch_lu$X, na.rm=T)
 
   st_lu17 <- st_lu1[X %in% lu]
@@ -248,26 +260,27 @@ for(i in 1:length(site_todo)){
 
 
 
-  if(i == 41){
+  if(i == 1){
     summary_vluis_abs <- summary_land
   } else {
     summary_vluis_abs <- rbind(summary_vluis_abs, summary_land, fill = T)
   }
 
-  if(i == 41){
+  if(i == 1){
     summary_landuse1 <- summary_landuse
   } else {
     summary_landuse1 <- rbind(summary_landuse1, summary_landuse, fill = T)
   }
-
+summary_vluis_abs
+summary_landuse1
   # view <- setorder(summary_landuse1, MB_CATEGORY_NAME_2016)
   # view
 }
 #all_meshblocks <- merge(summary_landuse1, sample_sites, by = c("site_n"))
 #qc1 <- unique(all_data)
 
-write.csv(summary_vluis_abs, "summary_lu_mb_yarra.csv")
-write.csv(summary_landuse1, "summary_mb_pop_yarra.csv")
+write.csv(summary_vluis_abs, "summary_lu_mb_barwon.csv")
+write.csv(summary_landuse1, "summary_mb_pop_barwon.csv")
 
 
 #_____________________________maps___________________________________
@@ -292,7 +305,7 @@ st_mb16v2@data <- attr
 map <- leaflet()
 map <- addTiles(map, urlTemplate = "//{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", layerId = NULL, group = NULL, data = getMapData(map)) %>%
   fitBounds(144.5, -38.5, 146, -37)
-map
+
 #s <- readOGR("streams.shp")
 s <- s_vic
 
