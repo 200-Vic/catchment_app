@@ -5,7 +5,7 @@
 
 
 library(data.table)
-#library(sf)
+library(sf)
 library(raster)
 library(dplyr)
 library(exactextractr)
@@ -22,7 +22,7 @@ library(sp)
 setwd("C:/privateRlab/app_catchment")
 #setwd("C:/Users/CastonT/Environment Protection Authority Victoria/Environmental Public Health Branch (internal) SharePoint - Documents/EHTN/R_lab/catchment")
 
-generateGRASSshapeslines = TRUE
+generateGRASSshapeslines = FALSE
 aggregate_raster_factor = 1 #needs to be adjusted to enlarge cells and avoid flow direction of < 1. 5.2 too small
 #log_accumulation = x #this approach doesn't work for the execGRASS command
 #line 86 stream_thresh <- log_accum>5.2  #this is an accumulation threshold based on the number of upstream raster cells
@@ -80,7 +80,7 @@ points <- as.data.table(points)
 #setnames(points$X, points$site_n)
 
 points$site_n  <- as.numeric(seq.int(nrow(points)))
-points <- points[44]
+points <- points[37:43]
 points <- points[,.(longitude, latitude, site_n)]
 
 ##snap points to lines
@@ -189,7 +189,7 @@ for(i in 1:length(site_todo)){
   st_read("data/spatial/basin/basin.shp") -> b
   #shapefile("area.shp") -> a
   #shapefile("flows.shp") -> f
-plot(b)
+#plot(b)
 
 
   ##make elevation raster
